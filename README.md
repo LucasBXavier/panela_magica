@@ -51,7 +51,7 @@ O Swagger UI fica em `http://localhost:8080/panela-magica/swagger-ui.html`.
 
 1. O usuário se cadastra em `POST /api/v1/usuarios/cadastrar`.
 2. Faz login em `POST /api/v1/usuarios/login` e recebe um token JWT.
-3. Envia o token no header `Authorization: Bearer <token>` nas rotas protegidas.
+3. Envia o token no header `Authorization: Bearer <token>` nas rotas protegidas (criar e deletar receitas). A consulta de receitas (`GET`) é pública.
 
 O token expira em 60 minutos (`jwt.expiration-minutes`).
 

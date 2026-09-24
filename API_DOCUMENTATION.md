@@ -34,7 +34,8 @@ Authorization: Bearer <token>
 | `POST /api/v1/usuarios/cadastrar` | Pública |
 | `POST /api/v1/usuarios/login` | Pública |
 | Swagger (`/panela-magica/swagger-ui.html`, `/v3/api-docs`) | Pública |
-| Todas as demais (`/api/v1/receitas/**`) | **Requer token** |
+| `GET /api/v1/receitas` e `GET /api/v1/receitas/{id}` | Pública |
+| Todas as demais (`POST`/`DELETE` em `/api/v1/receitas/**`) | **Requer token** |
 
 O token expira em 60 minutos. Token ausente, inválido ou expirado retorna **401**:
 
@@ -169,7 +170,7 @@ O CORS está liberado para `http://localhost:3000`, `http://localhost:5173` e `h
 
 ## Receitas
 
-Todas as rotas abaixo **exigem** o header `Authorization: Bearer <token>`.
+A consulta (`GET`) é **pública**: não precisa de token. Criar e deletar **exigem** o header `Authorization: Bearer <token>`.
 
 ### Criar receita
 
@@ -232,9 +233,9 @@ Receita criada com sucesso
 
 ### Listar receitas 🚧
 
-`GET /api/v1/receitas`
+`GET /api/v1/receitas` — pública
 
-**Situação atual:** a rota funciona e exige token, mas **ainda não retorna as receitas**. A resposta é apenas o texto:
+**Situação atual:** a rota funciona sem token, mas **ainda não retorna as receitas**. A resposta é apenas o texto:
 
 ```
 Lista de receitas
@@ -246,7 +247,7 @@ O retorno com a lista de `ReceitaResponseDTO` (formato abaixo) está previsto.
 
 ### Buscar receita por ID 🚧
 
-`GET /api/v1/receitas/{id}`
+`GET /api/v1/receitas/{id}` — pública
 
 | Parâmetro | Tipo | Descrição |
 | --- | --- | --- |
@@ -326,7 +327,10 @@ curl -X POST http://localhost:8080/api/v1/usuarios/login \
   -H "Content-Type: application/json" \
   -d '{"email":"maria@email.com","senha":"senha1234"}'
 
-# 3. Usar o token
-curl http://localhost:8080/api/v1/receitas \
+# 3. Listar receitas (pública, não precisa de token)
+curl http://localhost:8080/api/v1/receitas
+
+# 4. Rota protegida: deletar exige o token
+curl -X DELETE http://localhost:8080/api/v1/receitas/<id> \
   -H "Authorization: Bearer <token>"
 ```
