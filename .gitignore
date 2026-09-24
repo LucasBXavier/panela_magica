@@ -33,5 +33,3 @@ build/
 .vscode/
 
 .env
-
-API_DOCUMENTATION.md
