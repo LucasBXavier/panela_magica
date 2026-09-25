@@ -16,7 +16,7 @@ public class UsuarioMapper {
     public Usuario toEntity(UsuarioRequestDTO dto) {
         Usuario usuario = new Usuario();
         usuario.setNome(dto.getNome());
-        usuario.setEmail(dto.getEmail());
+        usuario.setEmail(dto.getEmail().trim().toLowerCase());
         usuario.setSenha(passwordEncoder.encode(dto.getSenha()));
         return usuario;
     }
@@ -25,7 +25,7 @@ public class UsuarioMapper {
         UsuarioResponseDTO dto = new UsuarioResponseDTO();
         dto.setId(String.valueOf(entity.getId()));
         dto.setNome(entity.getNome());
-        dto.setEmail(entity.getEmail());
+        dto.setEmail(entity.getEmail().toLowerCase());
         dto.setDataCriacao(entity.getCreatedAt());
         return dto;
     }

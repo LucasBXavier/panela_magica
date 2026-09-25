@@ -21,9 +21,9 @@ public class SwaggerConfig {
         return new OpenAPI()
                 .info(
                         new Info()
-                                .title("API de Manutenção de Veículos")
+                                .title("API Panela Mágica")
                                 .version("v1")
-                                .description("Documentação da API de Manutenção de Veículos"))
+                                .description("Documentação da API de receitas culinárias do Panela Mágica"))
                 .addSecurityItem(new SecurityRequirement().addList("bearerAuth"))
                 .components(new Components().addSecuritySchemes("bearerAuth",
                         new SecurityScheme()

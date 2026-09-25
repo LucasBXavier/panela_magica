@@ -43,7 +43,4 @@ public class ReceitaRequestDTO {
     @NotNull
     @NotBlank
     private String categoria;
-    @NotNull
-    @NotBlank
-    private String unidadeMedida;
 }

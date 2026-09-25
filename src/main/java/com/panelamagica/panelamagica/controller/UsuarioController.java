@@ -5,6 +5,7 @@ import com.panelamagica.panelamagica.dto.login.LoginRequestDTO;
 import com.panelamagica.panelamagica.dto.login.LoginResponseDTO;
 import com.panelamagica.panelamagica.dto.user.UsuarioRequestDTO;
 import com.panelamagica.panelamagica.service.UsuarioService;
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -21,6 +22,8 @@ public class UsuarioController {
 
     private final UsuarioService usuarioService;
 
+    @Operation(summary = "Cadastrar usuário",
+            description = "Cadastra um novo usuário no sistema.")
     @PostMapping("/cadastrar")
     public ResponseEntity<SuccessResponseDTO<?>> cadastrar(@Valid @RequestBody UsuarioRequestDTO dto) {
         usuarioService.cadastrar(dto);
@@ -28,6 +31,8 @@ public class UsuarioController {
                 .body(new SuccessResponseDTO<>(201, "Usuário cadastrado com sucesso!"));
     }
 
+    @Operation(summary = "Login de usuário",
+            description = "Realiza o login de um usuário existente no sistema.")
     @PostMapping("/login")
     public ResponseEntity<SuccessResponseDTO<LoginResponseDTO>> login(@Valid @RequestBody LoginRequestDTO dto) {
         LoginResponseDTO response = usuarioService.login(dto);

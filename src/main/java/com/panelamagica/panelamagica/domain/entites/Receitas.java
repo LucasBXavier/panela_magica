@@ -1,13 +1,14 @@
 package com.panelamagica.panelamagica.domain.entites;
 
 import com.panelamagica.panelamagica.domain.enums.Categoria;
-import com.panelamagica.panelamagica.domain.enums.UnidadeMedida;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 import lombok.ToString;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -29,10 +30,10 @@ public class Receitas {
     @Column(nullable = false)
     private String nome;
 
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "TEXT")
     private String descricao;
 
-    @Column(nullable = false, name = "modo_preparo")
+    @Column(nullable = false, name = "modo_preparo", columnDefinition = "TEXT")
     private String modoPreparo;
 
     @Column(nullable = false, name = "tempo_preparo")
@@ -45,9 +46,14 @@ public class Receitas {
     @Enumerated(EnumType.STRING)
     private Categoria categoria;
 
-    @Column(nullable = false)
-    @Enumerated(EnumType.STRING)
-    private UnidadeMedida unidadeMedida;
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    @JdbcTypeCode(SqlTypes.VARBINARY)
+    @Column(columnDefinition = "bytea")
+    private byte[] imagem;
+
+    @Column(name = "imagem_content_type")
+    private String imagemContentType;
 
     @ToString.Exclude
     @EqualsAndHashCode.Exclude

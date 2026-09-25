@@ -1,9 +1,6 @@
 package com.panelamagica.panelamagica.dto.login;
 
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.*;
 import lombok.Data;
 
 @Data
@@ -13,11 +10,13 @@ public class LoginRequestDTO {
     @Email(regexp = "^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$", message = "Email inválido")
     @NotNull
     private String email;
-    @NotNull
-    @NotBlank(message = "Senha obrigatória")
-    @Size(
-            min = 6,
+
+    @NotBlank(message = "Senha é obrigatória")
+    @NotNull(message = "Senha não pode ser nula")
+    @Size(min = 8, message = "Senha deve ter no mínimo 8 caracteres")
+    @Pattern(
+            regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]{8,}$",
             message =
-                    "Senha deve ter no mínimo 6 caracteres, incluindo letras, números e caracteres especiais")
+                    "Senha deve conter pelo menos 8 caracteres, incluindo uma letra maiúscula, uma minúscula, um número e um caractere especial")
     private String senha;
 }
