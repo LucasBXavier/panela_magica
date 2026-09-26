@@ -2,30 +2,19 @@ package com.panelamagica.panelamagica.domain.entites;
 
 import com.panelamagica.panelamagica.domain.enums.Categoria;
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.NoArgsConstructor;
-import lombok.ToString;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
+import lombok.Getter;
+import lombok.Setter;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
-@Data
+@Getter
+@Setter
 @Table(name = "receitas")
 @Entity
-@AllArgsConstructor
-@NoArgsConstructor
-public class Receitas {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
+public class Receitas extends BaseEntity {
 
     @Column(nullable = false)
     private String nome;
@@ -46,17 +35,10 @@ public class Receitas {
     @Enumerated(EnumType.STRING)
     private Categoria categoria;
 
-    @ToString.Exclude
-    @EqualsAndHashCode.Exclude
-    @JdbcTypeCode(SqlTypes.VARBINARY)
-    @Column(columnDefinition = "bytea")
-    private byte[] imagem;
+    @OneToOne(fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
+    @JoinColumn(name = "imagem_id")
+    private ReceitaImagem imagem;
 
-    @Column(name = "imagem_content_type")
-    private String imagemContentType;
-
-    @ToString.Exclude
-    @EqualsAndHashCode.Exclude
     @OneToMany(mappedBy = "receita", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<ReceitaIngrediente> ingredientes = new ArrayList<>();
 

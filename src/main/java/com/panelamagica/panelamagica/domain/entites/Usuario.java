@@ -1,20 +1,20 @@
 package com.panelamagica.panelamagica.domain.entites;
 
-import jakarta.persistence.*;
-import lombok.Data;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.Table;
+import lombok.Getter;
+import lombok.Setter;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.UUID;
 
-@Data
+@Getter
+@Setter
 @Entity
 @Table(name = "usuarios")
-public class Usuario {
-
-    @Id
-    @GeneratedValue(generator = "UUID")
-    private UUID id;
+public class Usuario extends BaseEntity {
 
     @Column(nullable = false)
     private String nome;
@@ -31,5 +31,11 @@ public class Usuario {
     @PrePersist
     public void onCreate() {
         this.createdAt = OffsetDateTime.now(ZoneOffset.UTC);
+    }
+
+    /** Sem senha: evita vazar o hash em logs. */
+    @Override
+    public String toString() {
+        return "Usuario{id=" + getId() + ", email='" + email + "'}";
     }
 }

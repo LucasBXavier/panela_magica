@@ -1,8 +1,10 @@
 package com.panelamagica.panelamagica.dto.receitas;
 
+import com.panelamagica.panelamagica.domain.enums.UnidadeMedida;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -14,8 +16,8 @@ import java.math.BigDecimal;
 @NoArgsConstructor
 public class ReceitaIngredienteRequestDTO {
 
-    @NotNull
     @NotBlank
+    @Size(max = 255)
     private String nomeIngrediente;
 
     @NotNull
@@ -23,6 +25,5 @@ public class ReceitaIngredienteRequestDTO {
     private BigDecimal quantidade;
 
     @NotNull
-    @NotBlank
-    private String unidadeMedida;
+    private UnidadeMedida unidadeMedida;
 }

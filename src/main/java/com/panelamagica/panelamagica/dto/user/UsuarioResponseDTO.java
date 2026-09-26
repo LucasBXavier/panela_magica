@@ -1,21 +1,21 @@
 package com.panelamagica.panelamagica.dto.user;
 
-import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.OffsetDateTime;
+import java.util.UUID;
 
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
 public class UsuarioResponseDTO {
 
-    private String id;
+    private UUID id;
     private String nome;
     private String email;
 
-    @JsonFormat(pattern = "dd/MM/yyyy HH:mm:ss")
+    /** ISO-8601 com fuso (ex.: 2026-09-25T21:41:28.096Z). */
     private OffsetDateTime dataCriacao;
 }

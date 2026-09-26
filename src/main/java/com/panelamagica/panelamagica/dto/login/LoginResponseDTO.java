@@ -15,5 +15,7 @@ public class LoginResponseDTO {
     private String token;
     private String type;
     private long expiresIn;
+    private String refreshToken;
+    private long refreshExpiresIn;
     private UsuarioResponseDTO usuario;
 }

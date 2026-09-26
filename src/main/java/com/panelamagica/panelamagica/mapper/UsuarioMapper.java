@@ -23,9 +23,9 @@ public class UsuarioMapper {
 
     public UsuarioResponseDTO toResponseDTO(Usuario entity) {
         UsuarioResponseDTO dto = new UsuarioResponseDTO();
-        dto.setId(String.valueOf(entity.getId()));
+        dto.setId(entity.getId());
         dto.setNome(entity.getNome());
-        dto.setEmail(entity.getEmail().toLowerCase());
+        dto.setEmail(entity.getEmail());
         dto.setDataCriacao(entity.getCreatedAt());
         return dto;
     }

@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 
@@ -18,13 +19,16 @@ import java.nio.charset.StandardCharsets;
 public class JwtConfig {
 
     private final SecretKey secretKey;
+    private final String issuer;
 
-    public JwtConfig(@Value("${jwt.secret}") String secret) {
+    public JwtConfig(@Value("${jwt.secret}") String secret,
+                     @Value("${jwt.issuer:panela-magica}") String issuer) {
         byte[] bytes = secret.getBytes(StandardCharsets.UTF_8);
         if (bytes.length < 32) {
             throw new IllegalStateException("jwt.secret deve ter no mínimo 32 caracteres");
         }
         this.secretKey = new SecretKeySpec(bytes, "HmacSHA256");
+        this.issuer = issuer;
     }
 
     @Bean
@@ -34,6 +38,9 @@ public class JwtConfig {
 
     @Bean
     public JwtDecoder jwtDecoder() {
-        return NimbusJwtDecoder.withSecretKey(secretKey).macAlgorithm(MacAlgorithm.HS256).build();
+        NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(secretKey).macAlgorithm(MacAlgorithm.HS256).build();
+        // valida assinatura, expiração/nbf e também o emissor (iss)
+        decoder.setJwtValidator(JwtValidators.createDefaultWithIssuer(issuer));
+        return decoder;
     }
 }

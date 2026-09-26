@@ -1,22 +1,16 @@
 package com.panelamagica.panelamagica.domain.entites;
 
-import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+import lombok.Getter;
+import lombok.Setter;
 
-import java.util.UUID;
-
-@Data
+@Getter
+@Setter
 @Table(name = "ingredientes")
 @Entity
-@AllArgsConstructor
-@NoArgsConstructor
-public class Ingrediente {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
+public class Ingrediente extends BaseEntity {
 
     @Column(nullable = false, unique = true)
     private String nome;

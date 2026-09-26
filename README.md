@@ -58,24 +58,38 @@ O Swagger UI fica em `http://localhost:8080/panela-magica/swagger-ui.html`.
 
 ## Como funciona a autenticação
 
-1. O usuário se cadastra em `POST /api/v1/usuarios/cadastrar`.
-2. Faz login em `POST /api/v1/usuarios/login` e recebe um token JWT.
+1. O usuário se cadastra em `POST /api/v1/usuarios`.
+2. Faz login em `POST /api/v1/auth/login` e recebe um token JWT (access) e um `refreshToken`.
 3. Envia o token no header `Authorization: Bearer <token>` nas rotas protegidas (criar, atualizar e deletar receitas, enviar e deletar imagem, e listar as próprias receitas). A consulta de receitas e de imagens (`GET`) é pública.
 
-O token expira em 60 minutos (`jwt.expiration-minutes`).
+O token expira em 60 minutos (`jwt.expiration-minutes`). Para renovar sem pedir a senha, use `POST /api/v1/auth/refresh` com o `refreshToken` (válido por `jwt.refresh-expiration-days`, 7 dias; cada uso o troca por um novo) e `POST /api/v1/auth/logout` para revogá-lo. O JWT só é aceito se o emissor for `jwt.issuer` e seu `sub` é o id do usuário.
 
-A senha deve ter no mínimo 8 caracteres, com letra maiúscula, minúscula, número e um caractere especial (`@ $ ! % * ? &`).
+O login limita tentativas malsucedidas (`auth.login.max-attempts`, `auth.login.max-attempts-per-ip`, `auth.login.window-minutes`); o excesso retorna `429` com `Retry-After`. Os contadores ficam em memória (uma instância); atrás de proxy reverso configure `server.forward-headers-strategy` para que o IP seja o do cliente.
+
+A senha deve ter de 8 a 72 caracteres, com letra maiúscula, minúscula, número e um caractere especial (`@ $ ! % * ? & # _ -`).
 
 ## Atualizando um banco existente
 
-O projeto usa `spring.jpa.hibernate.ddl-auto=update`, que cria colunas novas mas **não altera as existentes**. Se a tabela `receitas` foi criada antes do suporte a imagens, ajuste a coluna `imagem` manualmente (a imagem passou a ser opcional e guardada como `bytea`):
+O projeto usa `spring.jpa.hibernate.ddl-auto=update`, que cria tabelas e colunas novas mas **não altera nem remove as existentes**. A imagem da receita agora fica na tabela `receita_imagem` (ligada por `receitas.imagem_id`), e não mais nas colunas `receitas.imagem` / `receitas.imagem_content_type`.
+
+Em um banco novo nada precisa ser feito. Em um banco que já tem imagens, **faça backup**, suba a aplicação uma vez (para o Hibernate criar `receita_imagem` e `receitas.imagem_id`) e então migre os dados (script não testado automaticamente — revise antes de executar):
 
 ```sql
-ALTER TABLE receitas DROP COLUMN imagem;
-ALTER TABLE receitas ADD COLUMN imagem bytea;
-```
+ALTER TABLE receita_imagem ADD COLUMN receita_id_tmp uuid;
 
-Atenção: `DROP COLUMN` apaga as imagens já gravadas. Em um banco novo nada disso é necessário.
+INSERT INTO receita_imagem (id, dados, content_type, receita_id_tmp)
+SELECT gen_random_uuid(), imagem, imagem_content_type, id
+FROM receitas
+WHERE imagem IS NOT NULL;
+
+UPDATE receitas r
+SET imagem_id = ri.id
+FROM receita_imagem ri
+WHERE ri.receita_id_tmp = r.id;
+
+ALTER TABLE receita_imagem DROP COLUMN receita_id_tmp;
+ALTER TABLE receitas DROP COLUMN imagem, DROP COLUMN imagem_content_type;
+```
 
 ## Documentação da API
 

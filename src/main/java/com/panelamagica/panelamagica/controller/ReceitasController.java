@@ -9,12 +9,13 @@ import com.panelamagica.panelamagica.service.ReceitaService;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import java.net.URI;
 import java.util.List;
 import java.util.UUID;
 
@@ -39,51 +40,17 @@ public class ReceitasController {
         return ResponseEntity.ok(new SuccessResponseDTO<>(200, "Receita encontrada", service.getReceitasById(id)));
     }
 
-    @Operation(summary = "Listar minhas receitas",
-            description = "Retorna uma lista de todas as receitas cadastradas pelo usuário autenticado.")
-    @GetMapping("/minhas-receitas")
-    public ResponseEntity<SuccessResponseDTO<List<ReceitaResponseDTO>>> getMinhasReceitas() {
-        return ResponseEntity.ok(new SuccessResponseDTO<>(200, "Minhas receitas listadas com sucesso", service.minhasReceitas()));
-    }
-
     @Operation(summary = "Criar receita",
-            description = "Cria uma nova receita com os detalhes fornecidos.")
-    @PostMapping("/criar")
+            description = "Cria uma nova receita com os detalhes fornecidos. Retorna 201 com o header `Location` da receita criada.")
+    @PostMapping
     public ResponseEntity<SuccessResponseDTO<ReceitaResponseDTO>> criarReceita(@Valid @RequestBody ReceitaRequestDTO dto) {
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(new SuccessResponseDTO<>(201, "Receita criada com sucesso", service.criarReceita(dto)));
-    }
-
-    @Operation(summary = "Deletar receita",
-            description = "Deleta uma receita específica pelo seu ID.")
-    @DeleteMapping("/{id}")
-    public ResponseEntity<SuccessResponseDTO<?>> deletarReceita(@PathVariable UUID id) {
-        service.deletarReceita(id);
-        return ResponseEntity.ok(new SuccessResponseDTO<>(200, "Receita deletada com sucesso"));
-    }
-
-    @Operation(summary = "Enviar imagem da receita",
-            description = "Envia (ou substitui) a imagem da receita. Formatos aceitos: JPEG, PNG e WEBP, até 5MB. Apenas o dono da receita pode enviar.")
-    @PostMapping(value = "/imagem", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<SuccessResponseDTO<String>> uploadImagem(@RequestParam("file") MultipartFile file,
-                                                                   @RequestParam("receitaId") UUID receitaId) {
-        String imageUrl = service.uploadImagemReceita(receitaId, file);
-        return ResponseEntity.ok(new SuccessResponseDTO<>(200, "Imagem enviada com sucesso", imageUrl));
-    }
-
-    @Operation(summary = "Obter imagem da receita",
-            description = "Retorna o binário da imagem da receita (image/jpeg, image/png ou image/webp).")
-    @GetMapping("/imagem/{receitaId}")
-    public ResponseEntity<byte[]> getImagemReceita(@PathVariable UUID receitaId) {
-        return service.getImagemReceita(receitaId);
-    }
-
-    @DeleteMapping("/imagem/{receitaId}")
-    @Operation(summary = "Deletar imagem da receita",
-            description = "Deleta a imagem da receita. Apenas o dono da receita pode deletar.")
-    public ResponseEntity<SuccessResponseDTO<?>> deletarImagemReceita(@PathVariable UUID receitaId) {
-        service.deletarImagemReceita(receitaId);
-        return ResponseEntity.ok(new SuccessResponseDTO<>(200, "Imagem deletada com sucesso"));
+        ReceitaResponseDTO criada = service.criarReceita(dto);
+        URI location = ServletUriComponentsBuilder.fromCurrentRequest()
+                .path("/{id}")
+                .buildAndExpand(criada.getId())
+                .toUri();
+        return ResponseEntity.created(location)
+                .body(new SuccessResponseDTO<>(201, "Receita criada com sucesso", criada));
     }
 
     @Operation(summary = "Atualizar receita",
@@ -91,5 +58,37 @@ public class ReceitasController {
     @PatchMapping("/{id}")
     public ResponseEntity<SuccessResponseDTO<ReceitaResponseDTO>> atualizarReceita(@PathVariable UUID id, @Valid @RequestBody ReceitasUpdateDTO dto) {
         return ResponseEntity.ok(new SuccessResponseDTO<>(200, "Receita atualizada com sucesso", service.atualizarReceita(id, dto)));
+    }
+
+    @Operation(summary = "Deletar receita",
+            description = "Deleta uma receita específica pelo seu ID. Retorna 204 sem corpo.")
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deletarReceita(@PathVariable UUID id) {
+        service.deletarReceita(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Enviar imagem da receita",
+            description = "Envia (ou substitui) a imagem da receita. Formatos aceitos: JPEG, PNG e WEBP, até 5MB. Apenas o dono da receita pode enviar.")
+    @PutMapping(value = "/{id}/imagem", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<SuccessResponseDTO<String>> uploadImagem(@PathVariable UUID id,
+                                                                   @RequestParam("file") MultipartFile file) {
+        String imageUrl = service.uploadImagemReceita(id, file);
+        return ResponseEntity.ok(new SuccessResponseDTO<>(200, "Imagem enviada com sucesso", imageUrl));
+    }
+
+    @Operation(summary = "Obter imagem da receita",
+            description = "Retorna o binário da imagem da receita (image/jpeg, image/png ou image/webp).")
+    @GetMapping("/{id}/imagem")
+    public ResponseEntity<byte[]> getImagemReceita(@PathVariable UUID id) {
+        return service.getImagemReceita(id);
+    }
+
+    @Operation(summary = "Deletar imagem da receita",
+            description = "Deleta a imagem da receita. Apenas o dono da receita pode deletar. Retorna 204 sem corpo.")
+    @DeleteMapping("/{id}/imagem")
+    public ResponseEntity<Void> deletarImagemReceita(@PathVariable UUID id) {
+        service.deletarImagemReceita(id);
+        return ResponseEntity.noContent().build();
     }
 }

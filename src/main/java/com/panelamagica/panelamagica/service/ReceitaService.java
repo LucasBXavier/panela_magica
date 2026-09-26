@@ -1,15 +1,19 @@
 package com.panelamagica.panelamagica.service;
 
+import com.panelamagica.panelamagica.domain.entites.ReceitaImagem;
+import com.panelamagica.panelamagica.domain.entites.Receitas;
 import com.panelamagica.panelamagica.domain.entites.Usuario;
 import com.panelamagica.panelamagica.dto.receitas.ReceitaRequestDTO;
 import com.panelamagica.panelamagica.dto.receitas.ReceitaResponseDTO;
 import com.panelamagica.panelamagica.dto.receitas.ReceitasUpdateDTO;
 import com.panelamagica.panelamagica.exception.BusinessRuleException;
+import com.panelamagica.panelamagica.exception.ForbiddenException;
 import com.panelamagica.panelamagica.exception.ResourceNotFoundException;
+import com.panelamagica.panelamagica.exception.UnauthorizedException;
 import com.panelamagica.panelamagica.mapper.ReceitaMapper;
 import com.panelamagica.panelamagica.repository.ReceitasRepository;
 import com.panelamagica.panelamagica.repository.UsuarioRepository;
-import lombok.AllArgsConstructor;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -22,24 +26,44 @@ import java.util.List;
 import java.util.UUID;
 
 @Service
-@AllArgsConstructor
+@RequiredArgsConstructor
 public class ReceitaService {
-    private ReceitasRepository receitasRepository;
-    private ReceitaMapper receitaMapper;
-    private UsuarioRepository userRepository;
+    private final ReceitasRepository receitasRepository;
+    private final ReceitaMapper receitaMapper;
+    private final UsuarioRepository userRepository;
 
     private Usuario getAuthenticatedUser() {
         var authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null
                 || !authentication.isAuthenticated()
                 || "anonymousUser".equals(authentication.getPrincipal())) {
-            throw new BusinessRuleException("Usuário não autenticado");
+            throw new UnauthorizedException("Usuário não autenticado");
         }
 
-        String email = authentication.getName();
+        // o subject do JWT é o id (UUID) do usuário; tokens antigos (subject = e-mail) exigem novo login
+        UUID usuarioId;
+        try {
+            usuarioId = UUID.fromString(authentication.getName());
+        } catch (IllegalArgumentException e) {
+            throw new UnauthorizedException("Token inválido: faça login novamente");
+        }
         return userRepository
-                .findByEmail(email)
-                .orElseThrow(() -> new BusinessRuleException("Usuário autenticado não encontrado"));
+                .findById(usuarioId)
+                .orElseThrow(() -> new UnauthorizedException("Usuário autenticado não encontrado"));
+    }
+
+    /**
+     * Carrega a receita e garante que pertence ao usuário: 404 se não existe, 403 se é de outro usuário.
+     * (As receitas são públicas para leitura, então revelar que existem não expõe nada; por isso 403 e não 404.)
+     */
+    private Receitas buscarDoUsuario(UUID id, Usuario usuario) {
+        var receita = receitasRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Receita não encontrada"));
+
+        if (!receita.getUsuario().getId().equals(usuario.getId())) {
+            throw new ForbiddenException("Receita não pertence ao usuário autenticado");
+        }
+        return receita;
     }
 
     @Transactional(readOnly = true)
@@ -73,15 +97,7 @@ public class ReceitaService {
     public void deletarReceita(UUID id) {
         Usuario usuario = getAuthenticatedUser();
 
-        if (!receitasRepository.existsById(id)) {
-            throw new ResourceNotFoundException("Receita não encontrada");
-        }
-
-        if (!receitasRepository.existsByIdAndUsuarioId(id, usuario.getId())) {
-            throw new BusinessRuleException("Receita não pertence ao usuário autenticado");
-        }
-
-        receitasRepository.deleteById(id);
+        receitasRepository.delete(buscarDoUsuario(id, usuario));
     }
 
     @Transactional(readOnly = true)
@@ -97,12 +113,7 @@ public class ReceitaService {
     public String uploadImagemReceita(UUID receitaId, MultipartFile file) {
         Usuario usuario = getAuthenticatedUser();
 
-        var receita = receitasRepository.findById(receitaId)
-                .orElseThrow(() -> new ResourceNotFoundException("Receita não encontrada"));
-
-        if (!receita.getUsuario().getId().equals(usuario.getId())) {
-            throw new BusinessRuleException("Receita não pertence ao usuário autenticado");
-        }
+        var receita = buscarDoUsuario(receitaId, usuario);
 
         if (file == null || file.isEmpty()) {
             throw new BusinessRuleException("Arquivo de imagem não informado");
@@ -115,10 +126,13 @@ public class ReceitaService {
             throw new BusinessRuleException("Erro ao processar a imagem da receita");
         }
 
-        receita.setImagem(bytes);
-        receita.setImagemContentType(detectarTipoImagem(bytes));
+        String contentType = detectarTipoImagem(bytes);
+        ReceitaImagem imagem = receita.getImagem() != null ? receita.getImagem() : new ReceitaImagem();
+        imagem.setDados(bytes);
+        imagem.setContentType(contentType);
+        receita.setImagem(imagem);
         receitasRepository.save(receita);
-        return "/api/v1/receitas/imagem/" + receitaId;
+        return ReceitaMapper.imagemUrl(receitaId);
     }
 
     @Transactional(readOnly = true)
@@ -126,17 +140,20 @@ public class ReceitaService {
         var receita = receitasRepository.findById(receitaId)
                 .orElseThrow(() -> new ResourceNotFoundException("Receita não encontrada"));
 
-        if (receita.getImagem() == null) {
+        ReceitaImagem imagem = receita.getImagem();
+        if (imagem == null) {
             throw new ResourceNotFoundException("Receita não possui imagem");
         }
 
         return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType(receita.getImagemContentType()))
-                .contentLength(receita.getImagem().length)
-                .body(receita.getImagem());
+                .contentType(MediaType.parseMediaType(imagem.getContentType()))
+                .contentLength(imagem.getDados().length)
+                .body(imagem.getDados());
     }
 
-    /** Identifica o tipo pelos primeiros bytes (magic numbers), sem confiar no Content-Type do cliente. */
+    /**
+     * Identifica o tipo pelos primeiros bytes (magic numbers), sem confiar no Content-Type do cliente.
+     */
     private String detectarTipoImagem(byte[] b) {
         if (b.length >= 3 && (b[0] & 0xFF) == 0xFF && (b[1] & 0xFF) == 0xD8 && (b[2] & 0xFF) == 0xFF) {
             return MediaType.IMAGE_JPEG_VALUE;
@@ -155,12 +172,7 @@ public class ReceitaService {
     public ReceitaResponseDTO atualizarReceita(UUID id, ReceitasUpdateDTO dto) {
         Usuario usuario = getAuthenticatedUser();
 
-        var receita = receitasRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Receita não encontrada"));
-
-        if (!receita.getUsuario().getId().equals(usuario.getId())) {
-            throw new BusinessRuleException("Receita não pertence ao usuário autenticado");
-        }
+        var receita = buscarDoUsuario(id, usuario);
 
         if (dto.getNome() != null && !dto.getNome().equals(receita.getNome())
                 && receitasRepository.existsByNomeAndUsuarioId(dto.getNome(), usuario.getId())) {
@@ -175,19 +187,13 @@ public class ReceitaService {
     public void deletarImagemReceita(UUID receitaId) {
         Usuario usuario = getAuthenticatedUser();
 
-        var receita = receitasRepository.findById(receitaId)
-                .orElseThrow(() -> new ResourceNotFoundException("Receita não encontrada"));
-
-        if (!receita.getUsuario().getId().equals(usuario.getId())) {
-            throw new BusinessRuleException("Receita não pertence ao usuário autenticado");
-        }
+        var receita = buscarDoUsuario(receitaId, usuario);
 
         if (receita.getImagem() == null) {
             throw new ResourceNotFoundException("Receita não possui imagem para deletar");
         }
 
         receita.setImagem(null);
-        receita.setImagemContentType(null);
         receitasRepository.save(receita);
     }
 }

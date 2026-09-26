@@ -1,5 +1,6 @@
 package com.panelamagica.panelamagica.config;
 
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -14,15 +15,21 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 @Configuration
 public class SecurityConfig {
+
+    private static final DateTimeFormatter TIMESTAMP = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss");
 
     private static final String[] SWAGGER_WHITELIST = {
             "/panela-magica/swagger-ui.html",
@@ -34,9 +41,20 @@ public class SecurityConfig {
     };
 
     private static final String[] PUBLIC_WHITELIST = {
-            "/api/v1/usuarios/cadastrar",
-            "/api/v1/usuarios/login",
             "/error"
+    };
+
+    private static final String[] PUBLIC_POST = {
+            "/api/v1/usuarios",
+            "/api/v1/auth/login",
+            "/api/v1/auth/refresh",
+            "/api/v1/auth/logout"
+    };
+
+    private static final String[] PUBLIC_RECEITAS_GET = {
+            "/api/v1/receitas",
+            "/api/v1/receitas/{id}",
+            "/api/v1/receitas/{id}/imagem"
     };
 
     @Bean
@@ -59,12 +77,16 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(SWAGGER_WHITELIST).permitAll()
                         .requestMatchers(PUBLIC_WHITELIST).permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/receitas", "/api/v1/receitas/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, PUBLIC_POST).permitAll()
+                        .requestMatchers(HttpMethod.GET, PUBLIC_RECEITAS_GET).permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth -> oauth
                         .jwt(jwt -> {})
-                        .authenticationEntryPoint(unauthorizedEntryPoint()))
-                .exceptionHandling(ex -> ex.authenticationEntryPoint(unauthorizedEntryPoint()));
+                        .authenticationEntryPoint(unauthorizedEntryPoint())
+                        .accessDeniedHandler(accessDeniedHandler()))
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint(unauthorizedEntryPoint())
+                        .accessDeniedHandler(accessDeniedHandler()));
 
         return http.build();
     }
@@ -76,6 +98,7 @@ public class SecurityConfig {
         config.setAllowedOrigins(allowedOrigins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+        config.setExposedHeaders(List.of("Location", "Retry-After"));
         config.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -84,12 +107,20 @@ public class SecurityConfig {
     }
 
     private AuthenticationEntryPoint unauthorizedEntryPoint() {
-        return (request, response, ex) -> {
-            response.setStatus(401);
-            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-            response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-            response.getWriter().write(
-                    "{\"message\":\"Token ausente, inválido ou expirado\",\"status\":401}");
-        };
+        return (request, response, ex) ->
+                escreverErro(response, 401, "Token ausente, inválido ou expirado");
+    }
+
+    private AccessDeniedHandler accessDeniedHandler() {
+        return (request, response, ex) -> escreverErro(response, 403, "Acesso negado");
+    }
+
+    /** Mesmo formato do {@code ErrorResponseDTO}; só recebe mensagens fixas, então não precisa escapar JSON. */
+    private static void escreverErro(HttpServletResponse response, int status, String message) throws IOException {
+        response.setStatus(status);
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.getWriter().write("{\"message\":\"" + message + "\",\"status\":" + status
+                + ",\"timestamp\":\"" + LocalDateTime.now().format(TIMESTAMP) + "\"}");
     }
 }

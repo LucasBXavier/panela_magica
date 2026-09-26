@@ -21,7 +21,7 @@ public class UsuarioDetailsService implements UserDetailsService {
 
         return User.withUsername(usuario.getEmail())
                 .password(usuario.getSenha())
-                .authorities("USER")
+                .authorities(TokenService.SCOPE_PADRAO)
                 .build();
     }
 }

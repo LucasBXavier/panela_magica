@@ -6,6 +6,22 @@
 - **Formato:** JSON (`Content-Type: application/json`); o envio de imagem usa `multipart/form-data` e a leitura de imagem devolve o binário
 - **Swagger UI:** `http://localhost:8080/panela-magica/swagger-ui.html`
 
+> **Mudança de contrato (breaking).** As rotas foram reorganizadas para o padrão REST:
+>
+> | Antes | Agora |
+> | --- | --- |
+> | `POST /api/v1/usuarios/cadastrar` | `POST /api/v1/usuarios` |
+> | `POST /api/v1/usuarios/login` | `POST /api/v1/auth/login` |
+> | `POST /api/v1/receitas/criar` | `POST /api/v1/receitas` (retorna `201` + header `Location`) |
+> | `GET /api/v1/receitas/minhas-receitas` | `GET /api/v1/usuarios/me/receitas` |
+> | `POST /api/v1/receitas/imagem` (`receitaId` no corpo) | `PUT /api/v1/receitas/{id}/imagem` |
+> | `GET /api/v1/receitas/imagem/{id}` | `GET /api/v1/receitas/{id}/imagem` |
+> | `DELETE /api/v1/receitas/imagem/{id}` | `DELETE /api/v1/receitas/{id}/imagem` |
+>
+> Também mudaram: `DELETE` de receita e de imagem respondem **`204 No Content`** (sem corpo); `dataCriacao` (receita e usuário) agora é **ISO-8601 com fuso** (ex.: `2026-09-24T14:30:00-03:00`); os `id` continuam sendo UUID em texto; tentar alterar/apagar receita (ou imagem) de **outro usuário** agora responde **`403`** (antes `400`), e usuário não autenticado no service responde `401`.
+>
+> **Autenticação (novidades):** o login passou a devolver também um `refreshToken`; foram adicionados `POST /api/v1/auth/refresh` e `POST /api/v1/auth/logout`; o `sub` do JWT agora é o **id (UUID) do usuário** (antes era o e-mail), então tokens emitidos antes dessa mudança respondem `401` e exigem novo login; o login tem limite de tentativas (`429`).
+
 ## Sumário
 
 - [Autenticação](#autenticação)
@@ -21,8 +37,8 @@
 
 A API usa **JWT (Bearer token)**. Fluxo:
 
-1. Cadastre-se em `POST /api/v1/usuarios/cadastrar`.
-2. Faça login em `POST /api/v1/usuarios/login` e guarde o `token` recebido.
+1. Cadastre-se em `POST /api/v1/usuarios`.
+2. Faça login em `POST /api/v1/auth/login` e guarde o `token` (access) e o `refreshToken`.
 3. Envie o token em toda rota protegida:
 
 ```
@@ -31,13 +47,13 @@ Authorization: Bearer <token>
 
 | Rota | Acesso |
 | --- | --- |
-| `POST /api/v1/usuarios/cadastrar` | Pública |
-| `POST /api/v1/usuarios/login` | Pública |
+| `POST /api/v1/usuarios` | Pública |
+| `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh` e `POST /api/v1/auth/logout` | Pública |
 | Swagger (`/panela-magica/swagger-ui.html`, `/v3/api-docs`) | Pública |
-| `GET /api/v1/receitas`, `GET /api/v1/receitas/{id}` e `GET /api/v1/receitas/imagem/{receitaId}` | Pública |
-| Todas as demais (`POST`/`PATCH`/`DELETE` em `/api/v1/receitas/**` (inclui enviar e deletar imagem) e `GET /api/v1/receitas/minhas-receitas`) | **Requer token** |
+| `GET /api/v1/receitas`, `GET /api/v1/receitas/{id}` e `GET /api/v1/receitas/{id}/imagem` | Pública |
+| Todas as demais (`POST`/`PATCH`/`PUT`/`DELETE` em `/api/v1/receitas/**` (inclui enviar e deletar imagem) e `GET /api/v1/usuarios/me/receitas`) | **Requer token** |
 
-O token expira em 60 minutos. Token ausente, inválido ou expirado retorna **401**:
+O token (access) expira em 60 minutos; quando expirar, troque o `refreshToken` (válido por 7 dias) por um novo par em [Renovar token](#renovar-token), sem pedir a senha de novo. O token é assinado com HS256 e só é aceito se o emissor (`iss`) for o da aplicação. Token ausente, inválido ou expirado retorna **401**:
 
 ```json
 { "message": "Token ausente, inválido ou expirado", "status": 401 }
@@ -76,15 +92,15 @@ O CORS está liberado para `http://localhost:3000`, `http://localhost:5173` e `h
 
 ### Cadastrar usuário
 
-`POST /api/v1/usuarios/cadastrar` — pública
+`POST /api/v1/usuarios` — pública
 
 **Corpo da requisição**
 
 | Campo | Tipo | Obrigatório | Regras |
 | --- | --- | --- | --- |
-| `nome` | string | sim | não pode ser vazio |
-| `email` | string | sim | e-mail válido; deve ser único |
-| `senha` | string | sim | mínimo 8 caracteres, com ao menos uma letra maiúscula, uma minúscula, um número e um caractere especial (`@ $ ! % * ? &`); outros símbolos são rejeitados |
+| `nome` | string | sim | não pode ser vazio; até 255 caracteres |
+| `email` | string | sim | e-mail válido; até 255 caracteres; deve ser único |
+| `senha` | string | sim | de 8 a 72 caracteres, com ao menos uma letra maiúscula, uma minúscula, um número e um caractere especial (`@ $ ! % * ? & # _ -`); só letras (sem acento), números e esses símbolos são aceitos |
 
 ```json
 {
@@ -115,14 +131,14 @@ O CORS está liberado para `http://localhost:3000`, `http://localhost:5173` e `h
 
 ### Login
 
-`POST /api/v1/usuarios/login` — pública
+`POST /api/v1/auth/login` — pública
 
 **Corpo da requisição**
 
 | Campo | Tipo | Obrigatório | Regras |
 | --- | --- | --- | --- |
 | `email` | string | sim | e-mail válido |
-| `senha` | string | sim | mesmas regras da senha do cadastro (mínimo 8 caracteres, maiúscula, minúscula, número e um dos especiais `@ $ ! % * ? &`) |
+| `senha` | string | sim | não pode ser vazia; até 72 caracteres (a complexidade só é exigida no cadastro) |
 
 ```json
 {
@@ -141,11 +157,13 @@ O CORS está liberado para `http://localhost:3000`, `http://localhost:5173` e `h
     "token": "eyJhbGciOiJIUzI1NiJ9...",
     "type": "Bearer",
     "expiresIn": 3600,
+    "refreshToken": "kX3n...(43 caracteres)",
+    "refreshExpiresIn": 604800,
     "usuario": {
       "id": "3f2b8c1e-...",
       "nome": "Maria Silva",
       "email": "maria@email.com",
-      "dataCriacao": "24/09/2026 14:00:00"
+      "dataCriacao": "2026-09-24T14:00:00-03:00"
     }
   },
   "timestamp": "24/09/2026 14:30:00"
@@ -157,44 +175,80 @@ O CORS está liberado para `http://localhost:3000`, `http://localhost:5173` e `h
 | `token` | JWT a ser enviado no header `Authorization` |
 | `type` | Sempre `Bearer` |
 | `expiresIn` | Validade do token, em segundos |
+| `refreshToken` | Token opaco para obter um novo par de tokens (ver [Renovar token](#renovar-token)). Guarde com segurança: quem o tiver consegue renovar a sessão |
+| `refreshExpiresIn` | Validade do refresh token, em segundos |
 | `usuario` | Dados do usuário autenticado (a senha nunca é retornada) |
 
 **Erros**
 
 | Status | Motivo |
 | --- | --- |
-| `400` | Corpo inválido (e-mail mal formatado, senha fora das regras acima etc.) |
+| `400` | Corpo inválido (e-mail mal formatado, senha vazia ou acima de 72 caracteres etc.) |
 | `401` | `E-mail ou senha inválidos` |
+| `429` | Muitas tentativas malsucedidas: mais de 5 para o mesmo e-mail ou 20 para o mesmo IP em 15 minutos. O header `Retry-After` informa, em segundos, quando tentar de novo. Login bem-sucedido zera o contador do e-mail |
+
+---
+
+### Renovar token
+
+`POST /api/v1/auth/refresh` — pública (o refresh token é a credencial)
+
+**Corpo da requisição**
+
+| Campo | Tipo | Obrigatório | Regras |
+| --- | --- | --- | --- |
+| `refreshToken` | string | sim | valor recebido no login ou na última renovação; até 200 caracteres |
+
+**Resposta `200 OK`** — mesmo formato do [Login](#login), com um **novo** `token` e um **novo** `refreshToken`. O refresh token enviado deixa de valer (rotação): guarde sempre o mais recente.
+
+**Erros**
+
+| Status | Motivo |
+| --- | --- |
+| `400` | `refreshToken` ausente ou em branco |
+| `401` | `Refresh token inválido` (desconhecido ou já usado) ou `Refresh token expirado` |
+
+> **Reutilização:** apresentar um refresh token que já foi trocado é tratado como possível vazamento: **todas** as sessões do usuário são revogadas e é preciso fazer login de novo.
+
+---
+
+### Logout
+
+`POST /api/v1/auth/logout` — pública
+
+Revoga o refresh token informado. Corpo igual ao de [Renovar token](#renovar-token). Responde **`204 No Content`** sempre, inclusive para token desconhecido ou já revogado.
+
+> O access token já emitido continua válido até expirar (até 60 minutos); descarte-o no cliente.
 
 ---
 
 ## Receitas
 
-A consulta de receitas e de imagens (`GET`) é **pública**: não precisa de token. Criar, atualizar, deletar, enviar/deletar imagem e listar as próprias receitas (`minhas-receitas`) **exigem** o header `Authorization: Bearer <token>`.
+A consulta de receitas e de imagens (`GET`) é **pública**: não precisa de token. Criar, atualizar, deletar, enviar/deletar imagem e listar as próprias receitas (`/usuarios/me/receitas`) **exigem** o header `Authorization: Bearer <token>`.
 
 ### Criar receita
 
-`POST /api/v1/receitas/criar`
+`POST /api/v1/receitas`
 
-A receita é associada automaticamente ao usuário dono do token.
+A receita é associada automaticamente ao usuário dono do token. A resposta traz o header `Location` com a URL da receita criada (`/api/v1/receitas/{id}`).
 
 **Corpo da requisição**
 
 | Campo | Tipo | Obrigatório | Descrição |
 | --- | --- | --- | --- |
-| `nome` | string | sim | Nome da receita |
-| `descricao` | string | sim | Descrição curta |
-| `ingredientes` | array | sim | Ao menos 1 item (veja abaixo) |
-| `modoPreparo` | string | sim | Passo a passo |
-| `tempoPreparo` | string | sim | Ex.: `"45 minutos"` |
-| `rendimento` | string | sim | Ex.: `"8 porções"` |
+| `nome` | string | sim | Nome da receita (até 255 caracteres) |
+| `descricao` | string | sim | Descrição curta (até 5.000 caracteres) |
+| `ingredientes` | array | sim | Ao menos 1 item, sem itens `null` (veja abaixo) |
+| `modoPreparo` | string | sim | Passo a passo (até 20.000 caracteres) |
+| `tempoPreparo` | string | sim | Ex.: `"45 minutos"` (até 255 caracteres) |
+| `rendimento` | string | sim | Ex.: `"8 porções"` (até 255 caracteres) |
 | `categoria` | string | sim | Um valor de [Categoria](#categoria) |
 
 Cada item de `ingredientes`:
 
 | Campo | Tipo | Obrigatório | Regras |
 | --- | --- | --- | --- |
-| `nomeIngrediente` | string | sim | não pode ser vazio |
+| `nomeIngrediente` | string | sim | não pode ser vazio; até 255 caracteres |
 | `quantidade` | número | sim | maior que 0 |
 | `unidadeMedida` | string | sim | Um valor de [UnidadeMedida](#unidademedida) |
 
@@ -214,7 +268,7 @@ Cada item de `ingredientes`:
 }
 ```
 
-**Resposta `201 Created`**
+**Resposta `201 Created`** — header `Location: /api/v1/receitas/9a7c2d10-...`
 
 ```json
 {
@@ -232,7 +286,7 @@ Cada item de `ingredientes`:
     "rendimento": "12 fatias",
     "categoria": "DOCE",
     "imagemUrl": null,
-    "dataCriacao": "24/09/2026 14:30:00"
+    "dataCriacao": "2026-09-24T14:30:00-03:00"
   },
   "timestamp": "24/09/2026 14:30:00"
 }
@@ -242,7 +296,7 @@ Cada item de `ingredientes`:
 
 | Status | Motivo |
 | --- | --- |
-| `400` | Validação falhou (o corpo lista os campos, ex.: `nome: must not be blank`); `categoria` ou `unidadeMedida` de um ingrediente inválida (a mensagem lista os valores aceitos); ou já existe uma receita com esse nome para o usuário logado (`Receita já cadastrada para o usuário logado`) |
+| `400` | Validação falhou (o corpo lista os campos, ex.: `nome: must not be blank`, ou texto acima do limite de tamanho); JSON malformado; `categoria` ou `unidadeMedida` de um ingrediente inválida (a mensagem lista os valores aceitos); ou já existe uma receita com esse nome para o usuário logado (`Receita já cadastrada para o usuário logado`) |
 | `401` | Token ausente, inválido ou expirado |
 
 > Os campos `categoria` e `unidadeMedida` (dos ingredientes) aceitam maiúsculas ou minúsculas (`doce` e `DOCE` são equivalentes).
@@ -271,8 +325,8 @@ Cada item de `ingredientes`:
       "tempoPreparo": "1 hora",
       "rendimento": "12 fatias",
       "categoria": "DOCE",
-      "imagemUrl": "/api/v1/receitas/imagem/9a7c2d10-...",
-      "dataCriacao": "24/09/2026 14:30:00"
+      "imagemUrl": "/api/v1/receitas/9a7c2d10-.../imagem",
+      "dataCriacao": "2026-09-24T14:30:00-03:00"
     }
   ],
   "timestamp": "24/09/2026 14:30:00"
@@ -285,7 +339,7 @@ Cada item de `ingredientes`:
 
 ### Listar minhas receitas
 
-`GET /api/v1/receitas/minhas-receitas` — requer token
+`GET /api/v1/usuarios/me/receitas` — requer token
 
 Retorna apenas as receitas criadas pelo usuário dono do token. Mesmo formato da listagem geral, com a mensagem `Minhas receitas listadas com sucesso`.
 
@@ -329,12 +383,12 @@ Atualização **parcial**: só os campos enviados são alterados; os omitidos ma
 
 | Campo | Tipo | Regras |
 | --- | --- | --- |
-| `nome` | string | não pode ser vazio; não pode repetir o nome de outra receita do mesmo usuário |
-| `descricao` | string | não pode ser vazio |
+| `nome` | string | não pode ser vazio (máx. 255); não pode repetir o nome de outra receita do mesmo usuário |
+| `descricao` | string | não pode ser vazio (máx. 5.000) |
 | `ingredientes` | array | se enviado, **substitui a lista inteira** (não faz merge); ao menos 1 item, com os mesmos campos e regras de [Criar receita](#criar-receita) |
-| `modoPreparo` | string | não pode ser vazio |
-| `tempoPreparo` | string | não pode ser vazio |
-| `rendimento` | string | não pode ser vazio |
+| `modoPreparo` | string | não pode ser vazio (máx. 20.000) |
+| `tempoPreparo` | string | não pode ser vazio (máx. 255) |
+| `rendimento` | string | não pode ser vazio (máx. 255) |
 | `categoria` | string | Um valor de [Categoria](#categoria) |
 
 ```json
@@ -367,7 +421,7 @@ Atualização **parcial**: só os campos enviados são alterados; os omitidos ma
     "rendimento": "16 fatias",
     "categoria": "DOCE",
     "imagemUrl": null,
-    "dataCriacao": "24/09/2026 14:30:00"
+    "dataCriacao": "2026-09-24T14:30:00-03:00"
   },
   "timestamp": "24/09/2026 15:10:00"
 }
@@ -377,8 +431,9 @@ Atualização **parcial**: só os campos enviados são alterados; os omitidos ma
 
 | Status | Motivo |
 | --- | --- |
-| `400` | Campo enviado em branco (`nome não pode ser vazio`); `ingredientes` vazio (`A receita deve ter ao menos um ingrediente`); ingrediente inválido; `categoria` ou `unidadeMedida` inválida (a mensagem lista os valores aceitos); nome já usado por outra receita do usuário (`Receita já cadastrada para o usuário logado`); ou receita de outro usuário (`Receita não pertence ao usuário autenticado`) |
+| `400` | Campo enviado em branco (`nome: não pode ser vazio`); `ingredientes` vazio (`ingredientes: A receita deve ter ao menos um ingrediente`); JSON malformado; ingrediente inválido; `categoria` ou `unidadeMedida` inválida (a mensagem lista os valores aceitos); ou nome já usado por outra receita do usuário (`Receita já cadastrada para o usuário logado`) |
 | `401` | Token ausente, inválido ou expirado |
+| `403` | Receita de outro usuário (`Receita não pertence ao usuário autenticado`) |
 | `404` | `Receita não encontrada` |
 
 ---
@@ -393,39 +448,33 @@ Atualização **parcial**: só os campos enviados são alterados; os omitidos ma
 
 Só o usuário que criou a receita pode deletá-la.
 
-**Resposta `200 OK`**
-
-```json
-{
-  "status": 200,
-  "message": "Receita deletada com sucesso",
-  "data": null,
-  "timestamp": "24/09/2026 14:30:00"
-}
-```
+**Resposta `204 No Content`** — sem corpo.
 
 **Erros**
 
 | Status | Motivo |
 | --- | --- |
-| `400` | `Receita não pertence ao usuário autenticado` |
 | `401` | Token ausente, inválido ou expirado |
+| `403` | `Receita não pertence ao usuário autenticado` |
 | `404` | `Receita não encontrada` |
 
 ---
 
 ### Enviar imagem da receita
 
-`POST /api/v1/receitas/imagem` — requer token
+`PUT /api/v1/receitas/{id}/imagem` — requer token
 
-Envia (ou substitui) a imagem de uma receita já criada. O fluxo é: criar a receita em `/criar` e, em seguida, enviar a imagem com o `id` retornado. Só o dono da receita pode enviar.
+Envia (ou substitui) a imagem de uma receita já criada. O fluxo é: criar a receita com `POST /api/v1/receitas` e, em seguida, enviar a imagem com o `id` retornado. Só o dono da receita pode enviar.
+
+| Parâmetro | Tipo | Descrição |
+| --- | --- | --- |
+| `id` | UUID (path) | Identificador da receita |
 
 **Corpo:** `multipart/form-data`
 
 | Campo | Tipo | Obrigatório | Regras |
 | --- | --- | --- | --- |
 | `file` | arquivo | sim | JPEG, PNG ou WEBP; não vazio; até **5MB** |
-| `receitaId` | UUID | sim | `id` da receita |
 
 O formato é identificado pelo conteúdo do arquivo, não pelo `Content-Type` nem pela extensão enviados.
 
@@ -435,7 +484,7 @@ O formato é identificado pelo conteúdo do arquivo, não pelo `Content-Type` ne
 {
   "status": 200,
   "message": "Imagem enviada com sucesso",
-  "data": "/api/v1/receitas/imagem/9a7c2d10-...",
+  "data": "/api/v1/receitas/9a7c2d10-.../imagem",
   "timestamp": "24/09/2026 14:30:00"
 }
 ```
@@ -444,8 +493,9 @@ O formato é identificado pelo conteúdo do arquivo, não pelo `Content-Type` ne
 
 | Status | Motivo |
 | --- | --- |
-| `400` | Arquivo vazio ou ausente; formato inválido (`Formato de imagem inválido. Formatos aceitos: JPEG, PNG e WEBP`); parâmetro obrigatório ausente; ou receita de outro usuário (`Receita não pertence ao usuário autenticado`) |
+| `400` | Arquivo vazio ou ausente; formato inválido (`Formato de imagem inválido. Formatos aceitos: JPEG, PNG e WEBP`) |
 | `401` | Token ausente, inválido ou expirado |
+| `403` | Receita de outro usuário (`Receita não pertence ao usuário autenticado`) |
 | `404` | `Receita não encontrada` |
 | `413` | Imagem maior que 5MB (`Imagem muito grande. Tamanho máximo: 5MB`) |
 
@@ -453,11 +503,11 @@ O formato é identificado pelo conteúdo do arquivo, não pelo `Content-Type` ne
 
 ### Obter imagem da receita
 
-`GET /api/v1/receitas/imagem/{receitaId}` — pública
+`GET /api/v1/receitas/{id}/imagem` — pública
 
 | Parâmetro | Tipo | Descrição |
 | --- | --- | --- |
-| `receitaId` | UUID (path) | Identificador da receita |
+| `id` | UUID (path) | Identificador da receita |
 
 **Resposta `200 OK`** — não usa o envelope JSON: o corpo é o binário da imagem, com `Content-Type` `image/jpeg`, `image/png` ou `image/webp`. Pode ser usada direto em `<img src="...">`.
 
@@ -471,31 +521,22 @@ O formato é identificado pelo conteúdo do arquivo, não pelo `Content-Type` ne
 
 ### Deletar imagem da receita
 
-`DELETE /api/v1/receitas/imagem/{receitaId}` — requer token
+`DELETE /api/v1/receitas/{id}/imagem` — requer token
 
 Remove a imagem da receita (a receita em si permanece). Só o dono da receita pode remover.
 
 | Parâmetro | Tipo | Descrição |
 | --- | --- | --- |
-| `receitaId` | UUID (path) | Identificador da receita |
+| `id` | UUID (path) | Identificador da receita |
 
-**Resposta `200 OK`**
-
-```json
-{
-  "status": 200,
-  "message": "Imagem deletada com sucesso",
-  "data": null,
-  "timestamp": "24/09/2026 14:30:00"
-}
-```
+**Resposta `204 No Content`** — sem corpo.
 
 **Erros**
 
 | Status | Motivo |
 | --- | --- |
-| `400` | `Receita não pertence ao usuário autenticado` |
 | `401` | Token ausente, inválido ou expirado |
+| `403` | `Receita não pertence ao usuário autenticado` |
 | `404` | `Receita não encontrada` ou `Receita não possui imagem para deletar` |
 
 ---
@@ -520,36 +561,45 @@ Remove a imagem da receita (a receita em si permanece). Só o dono da receita po
 | --- | --- |
 | `200` | Sucesso |
 | `201` | Recurso criado (cadastro de usuário, criação de receita) |
-| `400` | Requisição inválida ou regra de negócio violada (validação de campos, e-mail já cadastrado, receita duplicada, receita de outro usuário, atualização com campo vazio, imagem vazia ou em formato inválido) |
-| `401` | Não autenticado: credenciais inválidas no login, ou token ausente/inválido/expirado |
-| `404` | Recurso não encontrado (receita inexistente ou sem imagem) |
+| `204` | Sucesso sem corpo (deletar receita, deletar imagem) |
+| `400` | Requisição inválida ou regra de negócio violada (validação de campos, JSON malformado, e-mail já cadastrado, receita duplicada, atualização com campo vazio, imagem vazia ou em formato inválido) |
+| `401` | Não autenticado: credenciais inválidas no login, refresh token inválido/expirado, ou token ausente/inválido/expirado |
+| `403` | Sem permissão: a receita (ou a imagem) pertence a outro usuário. Como as receitas são públicas para leitura, não se usa 404 para escondê-las |
+| `409` | Conflito de integridade dos dados (ex.: cadastro simultâneo com o mesmo e-mail) |
+| `429` | Limite de tentativas de login excedido (ver `Retry-After`) |
+| `404` | Recurso não encontrado (receita inexistente ou sem imagem, ou rota inexistente) |
 | `413` | Arquivo enviado maior que o limite (5MB) |
-| `500` | Erro interno do servidor |
+| `405` / `415` | Método HTTP ou tipo de conteúdo não suportado pela rota |
+| `500` | Erro interno do servidor (mensagem genérica; o detalhe fica apenas no log) |
 
 ## Exemplo rápido com curl
 
 ```bash
 # 1. Cadastrar
-curl -X POST http://localhost:8080/api/v1/usuarios/cadastrar \
+curl -X POST http://localhost:8080/api/v1/usuarios \
   -H "Content-Type: application/json" \
   -d '{"nome":"Maria Silva","email":"maria@email.com","senha":"Senha@1234"}'
 
 # 2. Login (copie o "token" da resposta)
-curl -X POST http://localhost:8080/api/v1/usuarios/login \
+curl -X POST http://localhost:8080/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"maria@email.com","senha":"Senha@1234"}'
+
+# 2b. Renovar o token (troque pelo "refreshToken" recebido; guarde o novo par)
+curl -X POST http://localhost:8080/api/v1/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{"refreshToken":"<refreshToken>"}'
 
 # 3. Listar receitas (pública, não precisa de token)
 curl http://localhost:8080/api/v1/receitas
 
 # 4. Enviar imagem da receita (multipart, exige token)
-curl -X POST http://localhost:8080/api/v1/receitas/imagem \
+curl -X PUT http://localhost:8080/api/v1/receitas/<id>/imagem \
   -H "Authorization: Bearer <token>" \
-  -F "receitaId=<id>" \
   -F "file=@foto.jpg"
 
 # 5. Baixar a imagem (pública)
-curl http://localhost:8080/api/v1/receitas/imagem/<id> --output foto.jpg
+curl http://localhost:8080/api/v1/receitas/<id>/imagem --output foto.jpg
 
 # 6. Atualizar parcialmente uma receita (exige token)
 curl -X PATCH http://localhost:8080/api/v1/receitas/<id> \
@@ -558,7 +608,7 @@ curl -X PATCH http://localhost:8080/api/v1/receitas/<id> \
   -d '{"rendimento":"16 fatias"}'
 
 # 7. Remover só a imagem da receita (exige token)
-curl -X DELETE http://localhost:8080/api/v1/receitas/imagem/<id> \
+curl -X DELETE http://localhost:8080/api/v1/receitas/<id>/imagem \
   -H "Authorization: Bearer <token>"
 
 # 8. Deletar a receita inteira (exige token)

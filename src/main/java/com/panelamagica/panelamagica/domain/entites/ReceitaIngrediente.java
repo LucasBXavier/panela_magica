@@ -2,28 +2,17 @@ package com.panelamagica.panelamagica.domain.entites;
 
 import com.panelamagica.panelamagica.domain.enums.UnidadeMedida;
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.NoArgsConstructor;
-import lombok.ToString;
+import lombok.Getter;
+import lombok.Setter;
 
 import java.math.BigDecimal;
-import java.util.UUID;
 
-@Data
+@Getter
+@Setter
 @Table(name = "receita_ingrediente")
 @Entity
-@AllArgsConstructor
-@NoArgsConstructor
-public class ReceitaIngrediente {
+public class ReceitaIngrediente extends BaseEntity {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
-
-    @ToString.Exclude
-    @EqualsAndHashCode.Exclude
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "receita_id", nullable = false)
     private Receitas receita;
