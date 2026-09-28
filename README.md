@@ -68,29 +68,6 @@ O login limita tentativas malsucedidas (`auth.login.max-attempts`, `auth.login.m
 
 A senha deve ter de 8 a 72 caracteres, com letra maiúscula, minúscula, número e um caractere especial (`@ $ ! % * ? & # _ -`).
 
-## Atualizando um banco existente
-
-O projeto usa `spring.jpa.hibernate.ddl-auto=update`, que cria tabelas e colunas novas mas **não altera nem remove as existentes**. A imagem da receita agora fica na tabela `receita_imagem` (ligada por `receitas.imagem_id`), e não mais nas colunas `receitas.imagem` / `receitas.imagem_content_type`.
-
-Em um banco novo nada precisa ser feito. Em um banco que já tem imagens, **faça backup**, suba a aplicação uma vez (para o Hibernate criar `receita_imagem` e `receitas.imagem_id`) e então migre os dados (script não testado automaticamente — revise antes de executar):
-
-```sql
-ALTER TABLE receita_imagem ADD COLUMN receita_id_tmp uuid;
-
-INSERT INTO receita_imagem (id, dados, content_type, receita_id_tmp)
-SELECT gen_random_uuid(), imagem, imagem_content_type, id
-FROM receitas
-WHERE imagem IS NOT NULL;
-
-UPDATE receitas r
-SET imagem_id = ri.id
-FROM receita_imagem ri
-WHERE ri.receita_id_tmp = r.id;
-
-ALTER TABLE receita_imagem DROP COLUMN receita_id_tmp;
-ALTER TABLE receitas DROP COLUMN imagem, DROP COLUMN imagem_content_type;
-```
-
 ## Documentação da API
 
 Veja [API_DOCUMENTATION.md](API_DOCUMENTATION.md) para todas as rotas, corpos de requisição e respostas.
